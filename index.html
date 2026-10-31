@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Fantasy Football Live Tracker</title>
+    <title>Solo Fantasy Football Live Tracker</title>
 
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -69,8 +69,8 @@
             </div>
             <div class="p-5 overflow-y-auto flex-1 text-sm text-gray-300 space-y-5">
                 <div>
-                    <h3 class="font-semibold text-gray-100 mb-1 text-base">How does this work?</h3>
-                    <p class="leading-relaxed">This is a fully standalone fantasy football live game tracker! Click <strong>Edit Roster</strong> in the sidebar to search the live NFL database and pick your players. Your roster is saved directly to your browser memory, so it will remember your team even if you refresh or close the tab.</p>
+                    <h3 class="font-semibold text-gray-100 mb-1 text-base">How does this version work?</h3>
+                    <p class="leading-relaxed">This is a fully standalone tracker! Click <strong>Edit Roster</strong> in the sidebar to search the live NFL database and pick your players. Your roster is saved directly to your browser memory, so it will remember your team even if you refresh or close the tab.</p>
                 </div>
                 <div>
                     <h3 class="font-semibold text-gray-100 mb-1 text-base">What do the flashing dots mean?</h3>
@@ -139,9 +139,9 @@
                       <span id="global-ping" class="absolute inline-flex h-full w-full rounded-full opacity-75 hidden"></span>
                       <span id="global-dot" class="relative inline-flex rounded-full h-3 w-3 bg-gray-600"></span>
                     </span>
-                    Live Tracker
+                    Live Tracker (Solo)
                 </h1>
-                <p class="text-[10px] text-gray-500 mt-1">Play Your Way</p>
+                <p class="text-[10px] text-gray-500 mt-1">Custom Roster Edition</p>
             </div>
             <button id="close-sidebar-btn" class="md:hidden p-2 -mr-2 text-gray-400 hover:text-white">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
@@ -442,7 +442,6 @@
                 updateGlobalStatus(false, false);
                 return;
             }
-
             TARGET_TEAMS = [...new Set(MY_TEAM_PARSED.map(p => p.team))];
             
             clearFeed('feed-container-filtered');
@@ -465,6 +464,7 @@
                 const teamData = player.team ? currentGameStates[player.team] : null;
                 const state = teamData ? teamData.state : null;
                 const clock = teamData ? teamData.clock : null;
+                const kickoff = teamData ? teamData.kickoff : null;
                 
                 let bgClass = "bg-gray-800 border-gray-700 text-gray-300"; 
                 if (state === "in") {
@@ -477,9 +477,11 @@
 
                 let clockDisplay = '';
                 if (state === 'in') {
-                    clockDisplay = `<span class="text-[8px] text-green-400/80 ml-auto font-mono tracking-tighter">[${clock}]</span>`;
+                    clockDisplay = `<span class="text-[7px] md:text-[8px] text-green-400/80 ml-auto font-mono tracking-tighter">[${clock}]</span>`;
                 } else if (state === 'post') {
-                    clockDisplay = `<span class="text-[8px] text-gray-500 ml-auto font-mono tracking-tighter">[Final]</span>`;
+                    clockDisplay = `<span class="text-[7px] md:text-[8px] text-gray-500 ml-auto font-mono tracking-tighter">[Final]</span>`;
+                } else if (state === 'pre' && kickoff) {
+                    clockDisplay = `<span class="text-[7px] md:text-[8px] text-gray-500 ml-auto font-mono tracking-tighter">[${kickoff}]</span>`;
                 }
 
                 let logoHtml = teamLogos[player.team] ? `<img src="${teamLogos[player.team]}" class="w-3.5 h-3.5 object-contain shrink-0 ml-1" alt="logo">` : `<span class="text-[9px] text-gray-500 font-mono ml-1">${player.team}</span>`;
@@ -583,6 +585,15 @@
                     if (competitions.length === 0) return;
                     const competitors = competitions[0].competitors || [];
                     
+                    let kickoffStr = null;
+                    if (event.date) {
+                        const d = new Date(event.date);
+                        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                        const day = days[d.getDay()];
+                        const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                        kickoffStr = `${day} ${time}`;
+                    }
+                    
                     competitors.forEach(c => {
                         if (c.team?.abbreviation) {
                             if (c.team.logo) teamLogos[c.team.abbreviation] = c.team.logo;
@@ -592,7 +603,11 @@
                             let tPeriod = event.status?.period || 1;
                             let tClockText = tState === 'post' ? 'Final' : (tState === 'pre' ? 'Pregame' : 'Q' + tPeriod + ' ' + tClock);
                             
-                            currentGameStates[c.team.abbreviation] = { state: tState, clock: tClockText };
+                            currentGameStates[c.team.abbreviation] = { 
+                                state: tState, 
+                                clock: tClockText,
+                                kickoff: kickoffStr 
+                            };
                         }
                     });
                     
