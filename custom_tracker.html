@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Solo Fantasy Football Live Tracker</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #111827; }
+        ::-webkit-scrollbar-thumb { background: #374151; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #4B5563; }
+        
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        @keyframes fadeInDown {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .play-card {
+            animation: fadeInDown 0.3s ease-out forwards;
+        }
+        .team-logo { width: 24px; height: 24px; object-fit: contain; }
+
+        /* Loading Screen */
+        #loading-screen {
+            position: fixed; inset: 0; background: #030712; z-index: 60; 
+            transition: opacity 0.3s ease-in-out;
+        }
+        .spinner {
+            border: 4px solid rgba(255,255,255,0.1); border-left-color: #22c55e;
+            border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Responsive Sidebar Logic */
+        #sidebar {
+            transition: margin 0.3s ease, transform 0.3s ease;
+        }
+        @media (min-width: 768px) {
+            #sidebar.desktop-closed {
+                margin-left: -320px; 
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-200 font-sans h-screen overflow-hidden flex relative">
+
+    <!-- Loading Screen -->
+    <div id="loading-screen" class="flex flex-col items-center justify-center hidden opacity-0">
+        <div class="spinner mb-4"></div>
+        <h2 class="text-xl font-bold text-white mb-2" id="loading-title">Updating Tracker</h2>
+        <p class="text-gray-400 text-sm" id="loading-text">Fetching live data...</p>
+    </div>
+
+    <!-- Help Modal Overlay -->
+    <div id="help-modal" class="fixed inset-0 bg-black/80 z-50 hidden flex justify-center items-center p-4 transition-opacity opacity-0 duration-300">
+        <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden transform transition-transform scale-95 duration-300" id="help-modal-content">
+            <div class="flex justify-between items-center p-4 border-b border-gray-800 bg-gray-800/50">
+                <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                    <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    Feature Guide & FAQ
+                </h2>
+                <button onclick="toggleHelpModal()" class="text-gray-400 hover:text-white p-1 rounded-md hover:bg-gray-700 transition-colors focus:outline-none">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="p-5 overflow-y-auto flex-1 text-sm text-gray-300 space-y-5">
+                <div>
+                    <h3 class="font-semibold text-gray-100 mb-1 text-base">How does this version work?</h3>
+                    <p class="leading-relaxed">This is a fully standalone tracker! Click <strong>Edit Roster</strong> in the sidebar to search the live NFL database and pick your players. Your roster is saved directly to your browser memory, so it will remember your team even if you refresh or close the tab.</p>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-gray-100 mb-1 text-base">What do the flashing dots mean?</h3>
+                    <ul class="space-y-2 mt-2">
+                        <li class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-gray-600 shrink-0"></span> <span><strong class="text-gray-400">Static Grey:</strong> Idle. None of your tracked games are active.</span></li>
+                        <li class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-green-500 shrink-0 animate-pulse"></span> <span><strong class="text-green-400">Pulsing Green:</strong> Active. A game featuring your player is live.</span></li>
+                        <li class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-red-500 shrink-0 animate-pulse"></span> <span><strong class="text-red-400">Pulsing Red:</strong> Red Zone! A tracked team is inside the 20-yard line.</span></li>
+                    </ul>
+                </div>
+                <div>
+                    <h3 class="font-semibold text-gray-100 mb-2 text-base">What do the colors mean in the Fantasy Alerts feed?</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 bg-gray-950 p-3 rounded border border-gray-800">
+                        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded bg-green-900 border border-green-500 shrink-0"></span> <span>Your Player <span class="text-gray-500">(Completed Play)</span></span></div>
+                        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded bg-yellow-900 border border-yellow-500 shrink-0"></span> <span>Incomplete/Warning <span class="text-gray-500">(Your Team)</span></span></div>
+                        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded bg-cyan-900 border border-cyan-500 shrink-0"></span> <span>Defense Alert <span class="text-gray-500">(Your Team)</span></span></div>
+                        <div class="flex items-center gap-2"><span class="w-3 h-3 rounded bg-yellow-400 border border-yellow-200 shrink-0 shadow-[0_0_8px_rgba(250,204,21,0.8)]"></span> <span>Scoring Play <span class="text-gray-500">(TD, FG, Safety)</span></span></div>
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 border-t border-gray-800 bg-gray-900 flex justify-end">
+                <button onclick="toggleHelpModal()" class="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded font-medium transition-colors focus:outline-none">Got it</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Roster Builder Modal -->
+    <div id="builder-modal" class="fixed inset-0 bg-black/90 z-[70] flex justify-center items-start pt-10 px-4 transition-opacity hidden">
+        <div class="bg-gray-900 border border-gray-700 rounded-xl shadow-2xl max-w-lg w-full max-h-[85vh] flex flex-col overflow-hidden">
+            <div class="p-4 border-b border-gray-800 bg-gray-800/80 flex justify-between items-center">
+                <h2 class="text-lg font-bold text-white">Draft Your Roster</h2>
+            </div>
+            <div class="p-4 flex flex-col gap-4 overflow-y-auto flex-1 bg-gray-950">
+                <div>
+                    <label class="block text-xs text-gray-400 uppercase tracking-wider mb-1 font-bold">Search NFL Database</label>
+                    <input type="text" id="player-search" oninput="handleSearch()" class="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded px-3 py-2 focus:outline-none focus:border-green-500 transition-colors" placeholder="e.g. Lamar Jackson, NYJ...">
+                </div>
+                <div id="search-results" class="flex flex-col gap-1 border border-gray-800 rounded bg-gray-900 min-h-[40px] max-h-[160px] overflow-y-auto p-1 empty:hidden">
+                    <!-- Search results here -->
+                </div>
+                
+                <div class="mt-2 border-t border-gray-800 pt-4">
+                    <h3 class="text-xs text-green-400 uppercase tracking-wider font-bold mb-2">Your Current Roster (<span id="roster-count">0</span>)</h3>
+                    <div id="draft-roster-list" class="flex flex-col gap-1.5 max-h-[250px] overflow-y-auto pr-1">
+                        <!-- Draft roster players here -->
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 border-t border-gray-800 bg-gray-900 flex justify-end gap-3">
+                <button onclick="closeBuilderModal()" class="px-4 py-2 text-gray-400 hover:text-white transition-colors text-sm font-semibold">Cancel</button>
+                <button onclick="saveRosterAndLaunch()" class="px-6 py-2 bg-green-600 hover:bg-green-500 text-white rounded font-bold shadow-sm transition-colors text-sm">Save & Track</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile Sidebar Overlay -->
+    <div id="sidebar-overlay" class="fixed inset-0 bg-black/60 z-30 hidden transition-opacity md:hidden"></div>
+
+    <!-- Sidebar: Rosters & Active Games -->
+    <aside id="sidebar" class="w-[320px] bg-gray-900 border-r border-gray-800 flex flex-col h-full overflow-y-auto fixed md:relative z-40 transform -translate-x-full md:translate-x-0 shrink-0">
+        
+        <!-- Header -->
+        <div class="p-3 border-b border-gray-800 sticky top-0 bg-gray-900 z-20 shadow-sm flex justify-between items-start">
+            <div>
+                <h1 class="text-lg font-bold text-white flex items-center gap-2">
+                    <span class="relative flex h-3 w-3" title="Global Tracker Status">
+                      <span id="global-ping" class="absolute inline-flex h-full w-full rounded-full opacity-75 hidden"></span>
+                      <span id="global-dot" class="relative inline-flex rounded-full h-3 w-3 bg-gray-600"></span>
+                    </span>
+                    Live Tracker (Solo)
+                </h1>
+                <p class="text-[10px] text-gray-500 mt-1">Custom Roster Edition</p>
+            </div>
+            <button id="close-sidebar-btn" class="md:hidden p-2 -mr-2 text-gray-400 hover:text-white">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+        </div>
+
+        <div class="p-3 border-b border-gray-800 shrink-0">
+            <button onclick="openBuilderModal()" class="w-full bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white border border-gray-700 text-xs font-bold py-2 rounded shadow-sm transition-colors flex items-center justify-center gap-2">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                Edit Roster
+            </button>
+        </div>
+
+        <!-- Active Games Section -->
+        <div class="p-3 border-b border-gray-800 shrink-0">
+            <h2 class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Game Status</h2>
+            <div id="active-games-container" class="space-y-2">
+                <p class="text-[11px] md:text-xs text-gray-600 italic">Waiting for game data...</p>
+            </div>
+        </div>
+
+        <!-- Player Status Legend -->
+        <div class="px-3 py-2 border-b border-gray-800 bg-gray-950/30 flex flex-wrap gap-2 text-[9px] uppercase tracking-wider text-gray-500 justify-center shrink-0">
+            <div class="flex items-center gap-1"><span class="w-2 h-2 rounded bg-blue-800"></span> Upcoming</div>
+            <div class="flex items-center gap-1"><span class="w-2 h-2 rounded bg-green-600"></span> Live</div>
+            <div class="flex items-center gap-1"><span class="w-2 h-2 rounded bg-gray-700"></span> Final</div>
+        </div>
+
+        <!-- My Team -->
+        <div class="p-3 mb-4 shrink-0 flex-1">
+            <div class="mb-2">
+                <h2 class="text-sm font-bold text-green-400 uppercase tracking-wider truncate mb-1 border-b border-gray-800/50 pb-1">My Tracked Players</h2>
+            </div>
+            <div class="flex flex-col gap-1.5" id="my-team-active">
+                <!-- Roster populates here -->
+                <p class="text-xs text-gray-600 italic mt-2">No players added. Click Edit Roster above.</p>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content: Dual Live Feeds -->
+    <main class="flex-1 flex flex-col h-full bg-gray-950 relative min-w-0">
+        <header class="p-3 md:p-4 border-b border-gray-800 bg-gray-900/50 backdrop-blur-sm shadow-sm z-10 flex items-center shrink-0">
+            <div class="flex items-center gap-3 shrink-0">
+                <button id="sidebar-toggle-btn" class="p-2 bg-gray-800 rounded hover:bg-gray-700 text-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-600">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                </button>
+                <h2 class="text-lg md:text-xl font-bold text-white truncate flex items-center gap-2">
+                    Play-by-Play
+                    <button onclick="toggleHelpModal()" class="text-gray-500 hover:text-blue-400 transition-colors focus:outline-none" title="Help & FAQ">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    </button>
+                </h2>
+            </div>
+            
+            <div id="header-games-ticker" class="hidden md:flex flex-1 overflow-x-auto no-scrollbar items-center gap-3 text-xs font-mono border-l border-gray-800 ml-4 pl-4 h-full whitespace-nowrap mask-image-fade">
+                <!-- Mini scores injected here -->
+            </div>
+
+            <div class="text-[10px] md:text-xs text-gray-500 px-2 md:px-3 py-1 bg-gray-800 rounded-full border border-gray-700 shrink-0 ml-auto" id="last-update">
+                Waiting...
+            </div>
+        </header>
+
+        <div class="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
+            <!-- Filtered Feed (Fantasy Alerts) -->
+            <div class="flex-1 flex flex-col border-b md:border-b-0 md:border-r border-gray-800 relative bg-gray-950/50 min-h-0">
+                <div class="p-2 border-b border-gray-800 bg-gray-900/80 flex justify-between items-center z-10 shrink-0">
+                    <span class="text-xs font-bold text-green-400 uppercase tracking-widest flex items-center gap-2">
+                        🚨 Fantasy Alerts
+                    </span>
+                    <button onclick="clearFeed('feed-container-filtered')" class="text-[10px] text-gray-500 hover:text-white uppercase tracking-wider">Clear</button>
+                </div>
+                <div class="px-2 py-1.5 border-b border-gray-800 bg-gray-950/40 flex flex-wrap gap-4 text-[9px] uppercase tracking-wider text-gray-500 justify-center shrink-0 z-10 shadow-inner">
+                    <div class="flex items-center gap-1"><span class="w-2 h-2 rounded bg-green-500"></span> My Team</div>
+                    <div class="flex items-center gap-1"><span class="w-2 h-2 rounded bg-yellow-500"></span> Inc</div>
+                    <div class="flex items-center gap-1"><span class="w-2 h-2 rounded bg-cyan-500"></span> Def</div>
+                </div>
+                <div class="flex-1 overflow-y-auto p-3 md:p-4 flex flex-col gap-3" id="feed-container-filtered"></div>
+                <div id="empty-state-filtered" class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none opacity-50 z-0">
+                    <svg class="w-12 h-12 text-gray-700 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    <p class="text-gray-500 font-medium text-[11px] md:text-sm text-center px-4">Plays involving your roster will appear here.</p>
+                </div>
+            </div>
+
+            <!-- Unfiltered Feed (All Tracked Plays) -->
+            <div class="flex-1 flex flex-col relative bg-gray-950 min-h-0">
+                <div class="p-2 border-b border-gray-800 bg-gray-900/80 flex justify-between items-center z-10 shrink-0">
+                    <span class="text-xs font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                        🏈 All Plays
+                    </span>
+                    <button onclick="clearFeed('feed-container-unfiltered')" class="text-[10px] text-gray-500 hover:text-white uppercase tracking-wider">Clear</button>
+                </div>
+                <div class="flex-1 overflow-y-auto p-3 md:p-4 flex flex-col gap-3" id="feed-container-unfiltered"></div>
+                <div id="empty-state-unfiltered" class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none opacity-50 z-0">
+                    <svg class="w-12 h-12 text-gray-700 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                    <p class="text-gray-500 font-medium text-[11px] md:text-sm text-center px-4">All plays for tracked games will appear here.</p>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // --- GLOBALS & STATE ---
+        const SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard";
+        const DEFENSE_KEYWORDS = ["intercept", "sack", "fumble", "safety", "blocked"];
+
+        let TARGET_TEAMS = []; 
+        let MY_TEAM_PARSED = [];
+        let DRAFT_ROSTER = []; // temporary holder while modal is open
+        let ALL_NFL_PLAYERS = []; // the raw database
+        
+        let seenPlays = new Set();
+        let teamLogos = {};
+        let currentGameStates = {};
+        let pollingInterval = null;
+
+        // --- SIDEBAR & MODAL LOGIC ---
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
+        const toggleBtn = document.getElementById('sidebar-toggle-btn');
+        const closeBtn = document.getElementById('close-sidebar-btn');
+
+        function toggleSidebar() {
+            const isMobile = window.innerWidth < 768;
+            if (isMobile) {
+                sidebar.classList.toggle('-translate-x-full');
+                overlay.classList.toggle('hidden');
+            } else {
+                sidebar.classList.toggle('desktop-closed');
+            }
+        }
+        toggleBtn.addEventListener('click', toggleSidebar);
+        closeBtn.addEventListener('click', toggleSidebar);
+        overlay.addEventListener('click', toggleSidebar);
+        
+        function toggleHelpModal() {
+            const modal = document.getElementById('help-modal');
+            const content = document.getElementById('help-modal-content');
+            
+            if (modal.classList.contains('hidden')) {
+                modal.classList.remove('hidden');
+                setTimeout(() => { modal.classList.remove('opacity-0'); content.classList.remove('scale-95'); }, 10);
+            } else {
+                modal.classList.add('opacity-0'); content.classList.add('scale-95');
+                setTimeout(() => { modal.classList.add('hidden'); }, 300);
+            }
+        }
+        document.getElementById('help-modal').addEventListener('click', function(e) { if (e.target === this) toggleHelpModal(); });
+
+        // --- UI UTILITIES ---
+        function clearFeed(containerId) {
+            document.getElementById(containerId).innerHTML = '';
+            if (containerId === 'feed-container-filtered') document.getElementById('empty-state-filtered').style.display = 'flex';
+            if (containerId === 'feed-container-unfiltered') document.getElementById('empty-state-unfiltered').style.display = 'flex';
+        }
+        
+        function updateGlobalStatus(hasActive, hasRedZone) {
+            const ping = document.getElementById('global-ping');
+            const dot = document.getElementById('global-dot');
+            ping.className = "absolute inline-flex h-full w-full rounded-full opacity-75";
+            dot.className = "relative inline-flex rounded-full h-3 w-3";
+            
+            if (hasRedZone) {
+                ping.classList.add('animate-ping', 'bg-red-400');
+                dot.classList.add('bg-red-500');
+            } else if (hasActive) {
+                ping.classList.add('animate-ping', 'bg-green-400');
+                dot.classList.add('bg-green-500');
+            } else {
+                ping.classList.add('hidden');
+                dot.classList.add('bg-gray-600');
+            }
+        }
+
+        // --- ROSTER BUILDER GUI LOGIC ---
+        
+        async function openBuilderModal() {
+            DRAFT_ROSTER = JSON.parse(JSON.stringify(MY_TEAM_PARSED)); // copy current state
+            renderDraftRoster();
+            
+            const modal = document.getElementById('builder-modal');
+            modal.classList.remove('hidden');
+            document.getElementById('player-search').value = "";
+            document.getElementById('search-results').innerHTML = "";
+            
+            if (ALL_NFL_PLAYERS.length === 0) {
+                document.getElementById('search-results').innerHTML = `<p class="text-xs text-gray-500 italic p-2">Downloading NFL database (one time only)...</p>`;
+                try {
+                    let res = await fetch("https://api.sleeper.app/v1/players/nfl");
+                    let db = await res.json();
+                    
+                    // Filter and map to a flat array for fast searching
+                    ALL_NFL_PLAYERS = Object.values(db).filter(p => p.team && p.active && ["QB","RB","WR","TE","DEF","K"].includes(p.position)).map(p => {
+                        const fInit = p.first_name ? p.first_name.charAt(0).toLowerCase() : "";
+                        let rawLast = (p.last_name || "").toLowerCase().replace(/\s+(jr\.|sr\.|ii|iii|iv|v)$/i, '');
+                        let isDef = p.position === "DEF";
+                        let nameStr = isDef ? `${p.first_name} ${p.last_name} D/ST` : `${p.first_name} ${p.last_name}`;
+                        
+                        return {
+                            id: p.player_id,
+                            name: nameStr,
+                            team: p.team,
+                            position: p.position,
+                            isDef: isDef,
+                            searchString: nameStr.toLowerCase(),
+                            search1: `${fInit}.${rawLast}`,
+                            search2: `${fInit}.${rawLast.replace(/\s+/g, '')}`,
+                            search3: `${(p.first_name || "").toLowerCase()} ${rawLast}`,
+                            search4: `${fInit}. ${rawLast}`
+                        };
+                    });
+                    document.getElementById('search-results').innerHTML = `<p class="text-xs text-gray-500 italic p-2">Database loaded. Type to search.</p>`;
+                } catch(e) {
+                    document.getElementById('search-results').innerHTML = `<p class="text-xs text-red-500 p-2">Failed to load database. Check connection.</p>`;
+                }
+            }
+        }
+        
+        function closeBuilderModal() {
+            document.getElementById('builder-modal').classList.add('hidden');
+        }
+        
+        window.handleSearch = function() {
+            let q = document.getElementById('player-search').value.toLowerCase().trim();
+            let resContainer = document.getElementById('search-results');
+            if (q.length < 2) {
+                resContainer.innerHTML = "";
+                return;
+            }
+            
+            let matches = ALL_NFL_PLAYERS.filter(p => p.searchString.includes(q)).slice(0, 10);
+            
+            if (matches.length === 0) {
+                resContainer.innerHTML = `<p class="text-xs text-gray-500 p-2">No players found.</p>`;
+                return;
+            }
+            
+            resContainer.innerHTML = matches.map(p => `
+                <div class="flex justify-between items-center bg-gray-800 hover:bg-gray-700 p-2 rounded cursor-pointer transition-colors" onclick="addPlayerToDraft('${p.id}')">
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs font-bold text-gray-400 w-8 text-right">${p.position}</span>
+                        <span class="text-sm text-gray-200 font-semibold">${p.name} <span class="text-gray-500 font-normal ml-1">${p.team}</span></span>
+                    </div>
+                    <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                </div>
+            `).join('');
+        }
+        
+        window.addPlayerToDraft = function(id) {
+            if (DRAFT_ROSTER.some(p => p.id === id)) return; // prevent dupes
+            let p = ALL_NFL_PLAYERS.find(p => p.id === id);
+            if (p) {
+                DRAFT_ROSTER.push(p);
+                renderDraftRoster();
+                document.getElementById('player-search').value = "";
+                document.getElementById('search-results').innerHTML = "";
+            }
+        }
+        
+        window.removePlayerFromDraft = function(id) {
+            DRAFT_ROSTER = DRAFT_ROSTER.filter(p => p.id !== id);
+            renderDraftRoster();
+        }
+        
+        function renderDraftRoster() {
+            document.getElementById('roster-count').innerText = DRAFT_ROSTER.length;
+            const container = document.getElementById('draft-roster-list');
+            if (DRAFT_ROSTER.length === 0) {
+                container.innerHTML = `<p class="text-xs text-gray-600 italic">No players added yet.</p>`;
+                return;
+            }
+            container.innerHTML = DRAFT_ROSTER.map(p => `
+                <div class="flex justify-between items-center bg-gray-900 border border-gray-800 p-2 rounded">
+                    <div class="flex items-center gap-2">
+                        <span class="text-[10px] font-bold text-gray-500 w-6">${p.position}</span>
+                        <span class="text-sm text-gray-300 font-medium">${p.name}</span>
+                    </div>
+                    <button onclick="removePlayerFromDraft('${p.id}')" class="text-gray-600 hover:text-red-500 transition-colors p-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+            `).join('');
+        }
+        
+        window.saveRosterAndLaunch = function() {
+            MY_TEAM_PARSED = JSON.parse(JSON.stringify(DRAFT_ROSTER));
+            localStorage.setItem('custom_ff_roster', JSON.stringify(MY_TEAM_PARSED));
+            closeBuilderModal();
+            initializeTracker();
+        }
+        
+        // --- TRACKER LOGIC ---
+        function initializeTracker() {
+            if (MY_TEAM_PARSED.length === 0) {
+                document.getElementById('my-team-active').innerHTML = `<p class="text-xs text-gray-600 italic mt-2">No players added. Click Edit Roster above.</p>`;
+                TARGET_TEAMS = [];
+                updateGlobalStatus(false, false);
+                return;
+            }
+
+            TARGET_TEAMS = [...new Set(MY_TEAM_PARSED.map(p => p.team))];
+            
+            clearFeed('feed-container-filtered');
+            clearFeed('feed-container-unfiltered');
+            seenPlays.clear();
+            currentGameStates = {};
+            
+            updateRosterUI();
+            
+            fetchEspnData();
+            if (!pollingInterval) pollingInterval = setInterval(fetchEspnData, 10000);
+        }
+
+        function updateRosterUI() {
+            const container = document.getElementById('my-team-active');
+            
+            if (MY_TEAM_PARSED.length === 0) return;
+            
+            container.innerHTML = MY_TEAM_PARSED.map(player => {
+                const teamData = player.team ? currentGameStates[player.team] : null;
+                const state = teamData ? teamData.state : null;
+                const clock = teamData ? teamData.clock : null;
+                
+                let bgClass = "bg-gray-800 border-gray-700 text-gray-300"; 
+                if (state === "in") {
+                    bgClass = "bg-green-900 border-green-500 text-green-100 shadow-[0_0_8px_rgba(34,197,94,0.4)]"; 
+                } else if (state === "post") {
+                    bgClass = "bg-gray-900 border-gray-800 text-gray-500 opacity-60"; 
+                } else if (state === "pre") {
+                    bgClass = "bg-blue-950/60 border-blue-800/80 text-blue-300"; 
+                }
+
+                let clockDisplay = '';
+                if (state === 'in') {
+                    clockDisplay = `<span class="text-[8px] text-green-400/80 ml-auto font-mono tracking-tighter">[${clock}]</span>`;
+                } else if (state === 'post') {
+                    clockDisplay = `<span class="text-[8px] text-gray-500 ml-auto font-mono tracking-tighter">[Final]</span>`;
+                }
+
+                let logoHtml = teamLogos[player.team] ? `<img src="${teamLogos[player.team]}" class="w-3.5 h-3.5 object-contain shrink-0 ml-1" alt="logo">` : `<span class="text-[9px] text-gray-500 font-mono ml-1">${player.team}</span>`;
+
+                return `
+                <div class="flex items-center gap-2 mb-1.5">
+                    <div class="text-[9px] font-bold text-gray-400 text-right w-[24px] shrink-0 uppercase">${player.position}</div>
+                    <div class="min-w-0 flex-1">
+                        <div class="px-2 py-1 text-xs rounded border transition-colors duration-300 ${bgClass} flex items-center gap-1.5 w-full leading-none">
+                            <span class="truncate font-medium">${player.name}</span>
+                            ${logoHtml}
+                            ${clockDisplay}
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function containsAny(text, keywordsArray) {
+            const lowerText = text.toLowerCase();
+            return keywordsArray.some(item => lowerText.includes(item.toLowerCase()));
+        }
+
+        function getMatchingPlayer(text) {
+            const lowerText = text.toLowerCase();
+            return MY_TEAM_PARSED.find(p => {
+                if (p.isDef) {
+                    return lowerText.includes(p.searchString); // Simplified for custom names
+                }
+                if (p.search1 && lowerText.includes(p.search1)) return true;
+                if (p.search2 && lowerText.includes(p.search2)) return true;
+                if (p.search3 && lowerText.includes(p.search3)) return true;
+                if (p.search4 && lowerText.includes(p.search4)) return true;
+                return false;
+            });
+        }
+
+        function determinePlayStyle(playText) {
+            const text = playText.toLowerCase();
+            const isIncomplete = text.includes("incomplete");
+            const isScoring = text.includes("touchdown") || text.includes("field goal is good") || text.includes("two-point conversion") || text.includes("extra point is good") || text.includes(" safety");
+
+            const myPlayer = getMatchingPlayer(text);
+
+            if (myPlayer) {
+                if (myPlayer.isDef && containsAny(text, DEFENSE_KEYWORDS)) {
+                    return { classes: "bg-cyan-950/40 border-cyan-500/50 text-cyan-100", badge: `<span class="bg-cyan-900 text-cyan-200 text-[10px] px-1.5 py-0.5 rounded font-bold mr-2 uppercase tracking-wide">🛡️ My Def</span>`, isRelevant: true, isScoring: isScoring };
+                }
+                if (!myPlayer.isDef) {
+                    if (isIncomplete) {
+                        return { classes: "bg-yellow-950/40 border-yellow-500/50 text-yellow-100", badge: `<span class="bg-yellow-900 text-yellow-200 text-[10px] px-1.5 py-0.5 rounded font-bold mr-2 uppercase tracking-wide">⚠️ My Team (Inc)</span>`, isRelevant: true, isScoring: false };
+                    }
+                    return { classes: "bg-green-950/40 border-green-500/50 text-green-100", badge: `<span class="bg-green-900 text-green-200 text-[10px] px-1.5 py-0.5 rounded font-bold mr-2 uppercase tracking-wide">🚨 My Team</span>`, isRelevant: true, isScoring: isScoring };
+                }
+            }
+            return { classes: "bg-gray-800/30 border-gray-700/50 text-gray-400", badge: `<span class="bg-gray-800 text-gray-400 text-[10px] px-1.5 py-0.5 rounded font-bold mr-2 uppercase tracking-wide">🏈 Play</span>`, isRelevant: false, isScoring: isScoring };
+        }
+
+        function createPlayCard(matchup, downDistance, playText, awayAbbr, homeAbbr, style) {
+            const card = document.createElement('div');
+            
+            let finalClasses = style.classes;
+            if (style.isScoring && style.isRelevant) {
+                finalClasses = "bg-yellow-950/20 border-yellow-400 text-yellow-100 shadow-[0_0_12px_rgba(250,204,21,0.3)]";
+            }
+            
+            card.className = `play-card p-2 md:p-3 rounded-lg border shadow-sm ${finalClasses} flex flex-col gap-1 text-[13px] md:text-sm`;
+            let matchupDisplay = `<span class="tracking-wide uppercase">${matchup}</span>`;
+            
+            if (teamLogos[awayAbbr] && teamLogos[homeAbbr]) {
+                 matchupDisplay = `<div class="flex items-center gap-1 mx-1"><img src="${teamLogos[awayAbbr]}" class="w-3.5 h-3.5 md:w-4 md:h-4 object-contain" alt="${awayAbbr}"><span class="text-gray-500">@</span><img src="${teamLogos[homeAbbr]}" class="w-3.5 h-3.5 md:w-4 md:h-4 object-contain" alt="${homeAbbr}"></div>`;
+            }
+            
+            if (style.isScoring && style.isRelevant) {
+                matchupDisplay += `<span class="ml-1 text-[14px] animate-bounce inline-block">💥</span>`;
+            }
+            
+            card.innerHTML = `<div class="flex items-center text-[10px] md:text-[11px] font-semibold opacity-90 mb-1">${style.badge}${matchupDisplay}<span class="mx-1.5 md:mx-2 text-gray-600">•</span><span>${downDistance || 'No Down/Distance'}</span></div><div class="leading-relaxed">${playText}</div>`;
+            return card;
+        }
+
+        async function fetchEspnData() {
+            if (TARGET_TEAMS.length === 0) return;
+
+            try {
+                const response = await fetch(SCOREBOARD_URL);
+                if (!response.ok) return;
+                
+                const data = await response.json();
+                const activeGamesUI = [];
+                const headerGamesUI = [];
+                const events = data.events || [];
+                
+                let globalActiveGame = false;
+                let globalRedZoneGame = false;
+                
+                currentGameStates = {};
+
+                events.forEach(event => {
+                    const competitions = event.competitions || [];
+                    if (competitions.length === 0) return;
+                    const competitors = competitions[0].competitors || [];
+                    
+                    competitors.forEach(c => {
+                        if (c.team?.abbreviation) {
+                            if (c.team.logo) teamLogos[c.team.abbreviation] = c.team.logo;
+                            
+                            let tState = event.status?.type?.state;
+                            let tClock = event.status?.displayClock || (tState === "post" ? "Final" : "0:00");
+                            let tPeriod = event.status?.period || 1;
+                            let tClockText = tState === 'post' ? 'Final' : (tState === 'pre' ? 'Pregame' : 'Q' + tPeriod + ' ' + tClock);
+                            
+                            currentGameStates[c.team.abbreviation] = { state: tState, clock: tClockText };
+                        }
+                    });
+                    
+                    const teams = competitors.map(c => c.team?.abbreviation).filter(Boolean);
+                    
+                    if (teams.some(team => TARGET_TEAMS.includes(team))) {
+                        const statusState = event.status?.type?.state;
+                        const home = competitors.find(c => c.homeAway === 'home') || competitors[0];
+                        const away = competitors.find(c => c.homeAway === 'away') || competitors[1];
+                        const homeAbbr = home?.team?.abbreviation;
+                        const awayAbbr = away?.team?.abbreviation;
+                        const homeScore = parseInt(home?.score || "0", 10);
+                        const awayScore = parseInt(away?.score || "0", 10);
+                        const matchupStr = `${awayAbbr} @ ${homeAbbr}`; 
+                        
+                        const gameClockStr = currentGameStates[homeAbbr]?.clock || "0:00";
+                        
+                        if (statusState === "in") {
+                            globalActiveGame = true;
+                        }
+                        
+                        const situation = competitions[0].situation || {};
+                        const isRedZone = situation.isRedZone;
+                        
+                        let rzClass = "bg-gray-800 border-gray-700";
+                        let rzBadge = "";
+                        let rzDot = "";
+                        
+                        if (isRedZone && statusState === "in") {
+                            globalRedZoneGame = true;
+                            rzClass = "bg-red-950/40 border-red-800/80 shadow-[0_0_8px_rgba(220,38,38,0.3)]";
+                            rzBadge = `<span class="text-[9px] bg-red-900/80 text-red-200 px-1 py-0.5 rounded mr-2 uppercase animate-pulse font-bold border border-red-700">🔴 RZ</span>`;
+                            rzDot = `<span class="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse shrink-0"></span>`;
+                        }
+
+                        if (statusState === "in" || statusState === "post") {
+                            let scoreDisplay = `<span class="font-semibold text-gray-200 text-xs">${awayAbbr} ${awayScore} @ ${homeAbbr} ${homeScore}</span>`;
+                            if (teamLogos[awayAbbr] && teamLogos[homeAbbr]) {
+                                scoreDisplay = `<div class="flex items-center gap-1.5"><div class="flex items-center gap-1"><img src="${teamLogos[awayAbbr]}" class="w-4 h-4 md:w-5 md:h-5 object-contain" alt="${awayAbbr}"><span class="font-bold font-mono text-gray-200 w-4 text-right">${awayScore}</span></div><span class="text-gray-600 text-[9px] md:text-[10px]">@</span><div class="flex items-center gap-1"><span class="font-bold font-mono text-gray-200 w-4 text-right">${homeScore}</span><img src="${teamLogos[homeAbbr]}" class="w-4 h-4 md:w-5 md:h-5 object-contain" alt="${homeAbbr}"></div></div>`;
+                            }
+                            activeGamesUI.push(`<div class="flex justify-between items-center p-2 rounded border ${rzClass} transition-colors duration-500">${scoreDisplay}<div class="flex items-center">${rzBadge}<span class="text-[9px] md:text-[10px] text-green-400 font-mono">${gameClockStr}</span></div></div>`);
+                        }
+                        
+                        if (statusState === 'in') {
+                            let awayClass = (awayScore > homeScore) ? 'font-bold text-white' : '';
+                            let homeClass = (homeScore >= awayScore) ? 'font-bold text-white' : '';
+                            
+                            headerGamesUI.push(`
+                                <div class="flex items-center gap-1.5 px-2 py-1 bg-gray-900/80 border border-gray-700 rounded-md shrink-0 text-gray-200">
+                                    ${rzDot}
+                                    <img src="${teamLogos[awayAbbr] || ''}" class="w-3.5 h-3.5 object-contain">
+                                    <span class="${awayClass}">${awayAbbr} ${awayScore}</span> 
+                                    <span class="text-gray-600">@</span> 
+                                    <span class="${homeClass}">${homeAbbr} ${homeScore}</span>
+                                    <span class="text-gray-500 text-[9px] ml-1 tracking-tighter">[${gameClockStr}]</span>
+                                </div>
+                            `);
+                        }
+                        
+                        // Process Plays
+                        if (statusState === "in" || statusState === "post") {
+                            const lastPlayText = situation.lastPlay?.text;
+                            let downDistance = situation.downDistanceText || "";
+                            
+                            if (isRedZone) {
+                                downDistance = `<span class="text-red-400 font-bold animate-pulse">🔴 RZ</span> ` + (downDistance ? `<span class="mx-1 text-gray-600">•</span> ${downDistance}` : '');
+                            }
+                            
+                            if (lastPlayText && lastPlayText !== "Waiting for play data...") {
+                                const playHash = `[${matchupStr}] [${downDistance}] ${lastPlayText}`;
+                                if (!seenPlays.has(playHash)) {
+                                    seenPlays.add(playHash);
+                                    const style = determinePlayStyle(lastPlayText);
+                                    
+                                    document.getElementById('empty-state-unfiltered').style.display = 'none';
+                                    const cardUnfiltered = createPlayCard(matchupStr, downDistance, lastPlayText, awayAbbr, homeAbbr, style);
+                                    document.getElementById('feed-container-unfiltered').prepend(cardUnfiltered);
+                                    
+                                    if (style.isRelevant) {
+                                        document.getElementById('empty-state-filtered').style.display = 'none';
+                                        const cardFiltered = createPlayCard(matchupStr, downDistance, lastPlayText, awayAbbr, homeAbbr, style);
+                                        document.getElementById('feed-container-filtered').prepend(cardFiltered);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+                
+                const activeContainer = document.getElementById('active-games-container');
+                activeContainer.innerHTML = activeGamesUI.length > 0 ? activeGamesUI.join('') : `<p class="text-[11px] md:text-xs text-gray-600 italic">No tracked games are currently active.</p>`;
+                
+                document.getElementById('header-games-ticker').innerHTML = headerGamesUI.length > 0 ? headerGamesUI.join('') : '';
+                document.getElementById('last-update').textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+                
+                updateGlobalStatus(globalActiveGame, globalRedZoneGame);
+                updateRosterUI(); // Refresh clocks
+
+                if (seenPlays.size > 200) {
+                    const playsArray = Array.from(seenPlays);
+                    seenPlays.clear();
+                    playsArray.slice(-100).forEach(p => seenPlays.add(p));
+                }
+            } catch (error) {
+                console.warn("Background fetch warning:", error);
+            }
+        }
+
+        // On Load Logic
+        window.addEventListener('DOMContentLoaded', () => {
+            const stored = localStorage.getItem('custom_ff_roster');
+            if (stored) {
+                try {
+                    MY_TEAM_PARSED = JSON.parse(stored);
+                    if (MY_TEAM_PARSED.length > 0) {
+                        initializeTracker();
+                        return;
+                    }
+                } catch(e) { console.error("Corrupted local storage."); }
+            }
+            // If empty, force open builder
+            openBuilderModal();
+        });
+
+    </script>
+</body>
+</html>
