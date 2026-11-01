@@ -217,7 +217,7 @@
                 </div>
                 <div class="px-2 py-1.5 border-b border-gray-800 bg-gray-950/40 flex flex-wrap gap-4 text-[9px] uppercase tracking-wider text-gray-500 justify-center shrink-0 z-10 shadow-inner">
                     <div class="flex items-center gap-1"><span class="w-2 h-2 rounded bg-green-500"></span> My Team</div>
-                    <div class="flex items-center gap-1"><span class="w-2 h-2 rounded bg-yellow-500"></span> Inc</div>
+                    <div class="flex items-center gap-1"><span class="w-2 h-2 rounded bg-yellow-500"></span> Warn</div>
                     <div class="flex items-center gap-1"><span class="w-2 h-2 rounded bg-cyan-500"></span> Def</div>
                 </div>
                 <div class="flex-1 overflow-y-auto p-3 md:p-4 flex flex-col gap-3" id="feed-container-filtered"></div>
@@ -248,11 +248,10 @@
         // --- GLOBALS & STATE ---
         const SCOREBOARD_URL = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard";
         const DEFENSE_KEYWORDS = ["intercept", "sack", "fumble", "safety", "blocked"];
-
         let TARGET_TEAMS = []; 
         let MY_TEAM_PARSED = [];
-        let DRAFT_ROSTER = []; // temporary holder while modal is open
-        let ALL_NFL_PLAYERS = []; // the raw database
+        let DRAFT_ROSTER = []; 
+        let ALL_NFL_PLAYERS = []; 
         
         let seenPlays = new Set();
         let teamLogos = {};
@@ -320,7 +319,7 @@
         // --- ROSTER BUILDER GUI LOGIC ---
         
         async function openBuilderModal() {
-            DRAFT_ROSTER = JSON.parse(JSON.stringify(MY_TEAM_PARSED)); // copy current state
+            DRAFT_ROSTER = JSON.parse(JSON.stringify(MY_TEAM_PARSED));
             renderDraftRoster();
             
             const modal = document.getElementById('builder-modal');
@@ -334,7 +333,6 @@
                     let res = await fetch("https://api.sleeper.app/v1/players/nfl");
                     let db = await res.json();
                     
-                    // Filter and map to a flat array for fast searching
                     ALL_NFL_PLAYERS = Object.values(db).filter(p => p.team && p.active && ["QB","RB","WR","TE","DEF","K"].includes(p.position)).map(p => {
                         const fInit = p.first_name ? p.first_name.charAt(0).toLowerCase() : "";
                         let rawLast = (p.last_name || "").toLowerCase().replace(/\s+(jr\.|sr\.|ii|iii|iv|v)$/i, '');
@@ -392,7 +390,7 @@
         }
         
         window.addPlayerToDraft = function(id) {
-            if (DRAFT_ROSTER.some(p => p.id === id)) return; // prevent dupes
+            if (DRAFT_ROSTER.some(p => p.id === id)) return;
             let p = ALL_NFL_PLAYERS.find(p => p.id === id);
             if (p) {
                 DRAFT_ROSTER.push(p);
@@ -509,7 +507,7 @@
             const lowerText = text.toLowerCase();
             return MY_TEAM_PARSED.find(p => {
                 if (p.isDef) {
-                    return lowerText.includes(p.searchString); // Simplified for custom names
+                    return lowerText.includes(p.searchString); 
                 }
                 if (p.search1 && lowerText.includes(p.search1)) return true;
                 if (p.search2 && lowerText.includes(p.search2)) return true;
@@ -521,7 +519,7 @@
 
         function determinePlayStyle(playText) {
             const text = playText.toLowerCase();
-            const isIncomplete = text.includes("incomplete");
+            const isWarning = text.includes("incomplete") || text.includes("loss of") || text.includes("no gain") || text.includes("sacked") || /-\d+\s+yard/.test(text);
             const isScoring = text.includes("touchdown") || text.includes("field goal is good") || text.includes("two-point conversion") || text.includes("extra point is good") || text.includes(" safety");
 
             const myPlayer = getMatchingPlayer(text);
@@ -531,8 +529,8 @@
                     return { classes: "bg-cyan-950/40 border-cyan-500/50 text-cyan-100", badge: `<span class="bg-cyan-900 text-cyan-200 text-[10px] px-1.5 py-0.5 rounded font-bold mr-2 uppercase tracking-wide">🛡️ My Def</span>`, isRelevant: true, isScoring: isScoring };
                 }
                 if (!myPlayer.isDef) {
-                    if (isIncomplete) {
-                        return { classes: "bg-yellow-950/40 border-yellow-500/50 text-yellow-100", badge: `<span class="bg-yellow-900 text-yellow-200 text-[10px] px-1.5 py-0.5 rounded font-bold mr-2 uppercase tracking-wide">⚠️ My Team (Inc)</span>`, isRelevant: true, isScoring: false };
+                    if (isWarning) {
+                        return { classes: "bg-yellow-950/40 border-yellow-500/50 text-yellow-100", badge: `<span class="bg-yellow-900 text-yellow-200 text-[10px] px-1.5 py-0.5 rounded font-bold mr-2 uppercase tracking-wide">⚠️ My Team (Warn)</span>`, isRelevant: true, isScoring: false };
                     }
                     return { classes: "bg-green-950/40 border-green-500/50 text-green-100", badge: `<span class="bg-green-900 text-green-200 text-[10px] px-1.5 py-0.5 rounded font-bold mr-2 uppercase tracking-wide">🚨 My Team</span>`, isRelevant: true, isScoring: isScoring };
                 }
